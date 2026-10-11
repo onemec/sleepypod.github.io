@@ -22,7 +22,7 @@ While sleepypod Core updates itself with `sp-update`, the underlying stock firmw
 
 Official `.swu` firmware packages distributed by Eight Sleep contain complete root filesystem archives built for the **NXP i.MX 8M Mini** platform (`imx8mm-var-dart-eight`). The Pod 3 Hub runs on a **MediaTek MT8365** SoC. Flashing the entire `.swu` file directly with `swupdate` or writing it to the eMMC will corrupt the kernel, device tree, and drivers, permanently bricking the board.
 
-However, the userspace ARM64 binaries (`frankenfirmware`, `libnats`, `nats-server`) and the STM32 `.bbin` microcontroller firmware images inside the archive are universal across Pod 3, Pod 4, and Pod 5 hardware.
+The userspace ARM64 binaries (`frankenfirmware`, `libnats`, `nats-server`) run across 64-bit ARM Linux platforms. However, microcontroller firmware images (`.bbin`) target specific hardware revisions: `firmware-sensor-g0.bbin` targets the STM32G0 microcontroller on Pod 4 covers, and `firmware-frozen.bbin` v1.5.156 has been verified on a MediaTek MT8365 Pod 3 Hub (`pn 20500`, hardware revision `0504`). Compatibility with other hub controller hardware revisions has not been tested.
 
 </Callout>
 
@@ -62,6 +62,8 @@ ssh -p 8822 root@POD_IP "
   if [ -f /opt/eight/config/machine.json ]; then cp -a /opt/eight/config/machine.json /opt/eight/config/machine.json.bak; fi
 "
 ```
+
+Keep these backups available on the Pod. If you need to revert any changes, see [Roll back to stock](#roll-back-to-stock).
 
 ### Step 2: Acquire the update archive
 
@@ -122,6 +124,14 @@ scp -P 8822 usr/bin/nats-server usr/bin/nats root@POD_IP:/usr/bin/
 scp -P 8822 etc/nats.conf root@POD_IP:/etc/nats.conf
 scp -P 8822 lib/systemd/system/nats-server.service root@POD_IP:/etc/systemd/system/nats-server.service
 ```
+
+<Callout type="info">
+  **Hub controller firmware:** Staging `firmware-frozen.bbin` in `/opt/eight/lib/subsystem_updates/`
+  causes `frank` to reflash the hub's onboard thermal controller MCU upon restarting. This has been
+  tested and verified on a Pod 3 Hub (`pn 20500`, hardware revision `0504`). If you only want to
+  update cover support or NATS telemetry without reflashing the hub controller, omit copying
+  `firmware-frozen.bbin`.
+</Callout>
 
 ### Step 5: Install and start NATS JetStream
 
@@ -217,6 +227,37 @@ ssh -p 8822 root@POD_IP "
 "
 ```
 
+### Roll back to stock
+
+If you encounter issues or wish to revert to stock daemons:
+
+```bash
+ssh -p 8822 root@POD_IP "
+  # Stop the firmware daemon and disable NATS
+  systemctl stop frank.service && \
+  systemctl disable --now nats-server.service && \
+
+  # Restore original binaries and configurations
+  cp -a /opt/eight/bin/frankenfirmware.bak /opt/eight/bin/frankenfirmware && \
+  rm -rf /opt/eight/lib/subsystem_updates && \
+  cp -a /opt/eight/lib/subsystem_updates.bak /opt/eight/lib/subsystem_updates && \
+  if [ -f /opt/eight/config/machine.json.bak ]; then
+    cp -a /opt/eight/config/machine.json.bak /opt/eight/config/machine.json
+  else
+    rm -f /opt/eight/config/machine.json
+  fi && \
+
+  # Clean up installed NATS files
+  rm -f /usr/bin/nats-server /usr/bin/nats /usr/lib64/libnats.so* /etc/nats.conf /etc/systemd/system/nats-server.service && \
+  systemctl daemon-reload && \
+
+  # Restart frank to restore stock behavior
+  systemctl start frank.service
+"
+```
+
+**Microcontroller rollback behavior:** When `frank` starts, it compares the running firmware on each connected microcontroller against the `.bbin` images in `/opt/eight/lib/subsystem_updates/`. If the restored directory contains older firmware versions, `frank` will initiate a flash cycle to downgrade matching microcontrollers back to the restored `.bbin` versions. Note that an STM32G0 Pod 4 cover cannot boot stock STM32F0/F1 firmware; reverting cover firmware will return the cover to its bootloader loop unless it is replaced with a native Pod 3 cover.
+
 ---
 
 ## Verification
@@ -230,14 +271,14 @@ sp-status
 Confirm that the sensor pipeline reports `NATS JetStream`:
 
 ```text
-sensor/cover: Pod 4 (I05)
-pipeline:     NATS JetStream
-nats-server:  active (port 4222 open)
-jetstream:    /persistent/jetstream present
-raw stream:   present (subject raw.>)
+pipeline:    NATS JetStream (new firmware, April 2026+)
+nats-server: active (port 4222 open)
+jetstream:   /persistent/jetstream present (<size>)
+jetstream-uploader.service: <state>
+raw stream:  present (subject raw.>)
 ```
 
-Inspect active message rates with the NATS CLI:
+Confirm messages are arriving with the NATS CLI:
 
 ```bash
 nats stream subjects raw
