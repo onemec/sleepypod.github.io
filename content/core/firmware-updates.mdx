@@ -57,9 +57,13 @@ Connect to your Pod over SSH as `root` (port 8822) and back up the current daemo
 
 ```bash
 ssh -p 8822 root@POD_IP "
-  cp -a /opt/eight/bin/frankenfirmware /opt/eight/bin/frankenfirmware.bak && \
-  cp -a /opt/eight/lib/subsystem_updates /opt/eight/lib/subsystem_updates.bak && \
-  if [ -f /opt/eight/config/machine.json ]; then cp -a /opt/eight/config/machine.json /opt/eight/config/machine.json.bak; fi
+  if [ ! -e /opt/eight/bin/frankenfirmware.bak ]; then cp -a /opt/eight/bin/frankenfirmware /opt/eight/bin/frankenfirmware.bak; fi && \
+  if [ ! -e /opt/eight/lib/subsystem_updates.bak ]; then cp -a /opt/eight/lib/subsystem_updates /opt/eight/lib/subsystem_updates.bak; fi && \
+  if [ -f /opt/eight/config/machine.json ] && [ ! -e /opt/eight/config/machine.json.bak ]; then cp -a /opt/eight/config/machine.json /opt/eight/config/machine.json.bak; fi && \
+  mkdir -p /opt/eight/backup_nats && \
+  for f in /usr/bin/nats-server /usr/bin/nats /usr/lib64/libnats.so.3.11.0 /etc/nats.conf /etc/systemd/system/nats-server.service; do
+    if [ -e \"\$f\" ] && [ ! -e \"/opt/eight/backup_nats/\$(basename \"\$f\")\" ]; then cp -a \"\$f\" /opt/eight/backup_nats/; fi
+  done
 "
 ```
 
@@ -233,22 +237,45 @@ If you encounter issues or wish to revert to stock daemons:
 
 ```bash
 ssh -p 8822 root@POD_IP "
-  # Stop the firmware daemon and disable NATS
-  systemctl stop frank.service && \
-  systemctl disable --now nats-server.service && \
+  # Verify required backups exist before changing services
+  if [ ! -f /opt/eight/bin/frankenfirmware.bak ] || [ ! -d /opt/eight/lib/subsystem_updates.bak ]; then
+    echo 'Error: backups missing; aborting rollback' >&2
+    exit 1
+  fi && \
 
-  # Restore original binaries and configurations
+  # Stop the firmware daemon
+  systemctl stop frank.service && \
+
+  # Disable NATS service if installed
+  if systemctl list-unit-files nats-server.service >/dev/null 2>&1 || [ -f /etc/systemd/system/nats-server.service ]; then
+    systemctl disable --now nats-server.service || true
+  fi && \
+
+  # Restore frankenfirmware
   cp -a /opt/eight/bin/frankenfirmware.bak /opt/eight/bin/frankenfirmware && \
+
+  # Safely stage and restore subsystem_updates
+  rm -rf /opt/eight/lib/subsystem_updates.restoring && \
+  cp -a /opt/eight/lib/subsystem_updates.bak /opt/eight/lib/subsystem_updates.restoring && \
   rm -rf /opt/eight/lib/subsystem_updates && \
-  cp -a /opt/eight/lib/subsystem_updates.bak /opt/eight/lib/subsystem_updates && \
+  mv /opt/eight/lib/subsystem_updates.restoring /opt/eight/lib/subsystem_updates && \
+
+  # Restore machine.json if backup exists
   if [ -f /opt/eight/config/machine.json.bak ]; then
     cp -a /opt/eight/config/machine.json.bak /opt/eight/config/machine.json
   else
     rm -f /opt/eight/config/machine.json
   fi && \
 
-  # Clean up installed NATS files
+  # Clean up installed NATS files and restore pre-existing NATS files if any existed
   rm -f /usr/bin/nats-server /usr/bin/nats /usr/lib64/libnats.so* /etc/nats.conf /etc/systemd/system/nats-server.service && \
+  if [ -d /opt/eight/backup_nats ]; then
+    if [ -f /opt/eight/backup_nats/nats-server ]; then cp -a /opt/eight/backup_nats/nats-server /usr/bin/; fi
+    if [ -f /opt/eight/backup_nats/nats ]; then cp -a /opt/eight/backup_nats/nats /usr/bin/; fi
+    if [ -f /opt/eight/backup_nats/libnats.so.3.11.0 ]; then cp -a /opt/eight/backup_nats/libnats.so.3.11.0 /usr/lib64/ && ldconfig; fi
+    if [ -f /opt/eight/backup_nats/nats.conf ]; then cp -a /opt/eight/backup_nats/nats.conf /etc/nats.conf; fi
+    if [ -f /opt/eight/backup_nats/nats-server.service ]; then cp -a /opt/eight/backup_nats/nats-server.service /etc/systemd/system/; fi
+  fi && \
   systemctl daemon-reload && \
 
   # Restart frank to restore stock behavior
@@ -300,7 +327,7 @@ Finally, check `/persistent/sleepypod-data/biometrics.db` to confirm that `cap_s
 <Callout type="error">
   **Advanced and high risk.**
 
-The Pod uses an A/B dual-boot partition layout (`/dev/mmcblk0p5` for Slot A, `/dev/mmcblk0p7` for Slot B).
+This procedure is strictly limited to boards running on the verified **Slot A** eMMC boot path (`/dev/mmcblk0p5`, `rootfs_a`) described in the [root access guide](/core/root-access/#6-boot-a-temporary-administrator-shell). Do not run this on SD-card installations (such as Pod 3 with an SD card), systems booted from Slot B, or unknown partition layouts.
 
 **Leaving Slot B untouched is recommended.** If Slot B retains its original factory installation, a hardware factory reset will safely boot into a pristine stock environment. If you overwrite Slot B, factory reset will boot into this modified environment instead.
 
@@ -312,16 +339,94 @@ If you choose to synchronize Slot B:
 
 ```bash
 ssh -p 8822 root@POD_IP "
-  mkdir -p /mnt/slot_b && mount -o rw /dev/mmcblk0p7 /mnt/slot_b
+  set -e
+  trap 'umount /mnt/slot_b 2>/dev/null || true' EXIT
 
-  # Preserve root SSH key access on Slot B
-  cp -a /etc/ssh/authorized_keys /mnt/slot_b/etc/ssh/authorized_keys
-  mkdir -p /mnt/slot_b/home/root/.ssh
-  cp -a /etc/ssh/authorized_keys /mnt/slot_b/home/root/.ssh/authorized_keys
-  chmod 700 /mnt/slot_b/home/root/.ssh && chmod 600 /mnt/slot_b/home/root/.ssh/authorized_keys
-  sed -i 's/^PermitRootLogin no/PermitRootLogin prohibit-password/' /mnt/slot_b/etc/ssh/sshd_config
+  # 1. Verify board variant and active boot slot (Slot A eMMC layout only)
+  ACTIVE_ROOT=\"\$(findmnt -n -o SOURCE / 2>/dev/null || awk '\$2==\"/\" {print \$1}' /proc/mounts)\"
+  CMDLINE=\"\$(cat /proc/cmdline 2>/dev/null || true)\"
+  case \"\$CMDLINE \$ACTIVE_ROOT\" in
+    *rootfs_a*|*mmcblk0p5*) ;;
+    *)
+      echo 'Error: Active system is not on the verified Slot A eMMC boot path (/dev/mmcblk0p5).' >&2
+      exit 1
+      ;;
+  esac
 
-  # Sync updated binaries, configurations, and NATS service
+  TARGET_DEV='/dev/mmcblk0p7'
+  if [ ! -b \"\$TARGET_DEV\" ]; then
+    echo \"Error: Inactive Slot B partition \$TARGET_DEV does not exist.\" >&2
+    exit 1
+  fi
+  if [ \"\$ACTIVE_ROOT\" = \"\$TARGET_DEV\" ]; then
+    echo \"Error: Target partition \$TARGET_DEV is currently active as root!\" >&2
+    exit 1
+  fi
+
+  # 2. Mount Slot B and verify mount target
+  mkdir -p /mnt/slot_b
+  mount -o rw \"\$TARGET_DEV\" /mnt/slot_b
+  MOUNTED_DEV=\"\$(findmnt -n -o SOURCE /mnt/slot_b 2>/dev/null || awk '\$2==\"/mnt/slot_b\" {print \$1}' /proc/mounts)\"
+  if [ \"\$MOUNTED_DEV\" != \"\$TARGET_DEV\" ]; then
+    echo \"Error: Mount mismatch: /mnt/slot_b is \$MOUNTED_DEV, expected \$TARGET_DEV.\" >&2
+    exit 1
+  fi
+
+  # 3. Resolve effective authorized_keys path used by sshd for root on Slot A
+  ROOT_HOME=\"\$(awk -F: '\$1==\"root\" {print \$6}' /etc/passwd 2>/dev/null || true)\"
+  ROOT_HOME=\"\${ROOT_HOME:-/home/root}\"
+
+  KEY_PATH=''
+  ENTRIES=\"\$(sshd -T -C 'user=root,host=localhost,addr=127.0.0.1' 2>/dev/null | awk 'tolower(\$1)==\"authorizedkeysfile\" {\$1=\"\"; print \$0}')\"
+  for entry in \$ENTRIES; do
+    case \"\$entry\" in
+      *%h*) cand=\"\${entry//%h/\$ROOT_HOME}\" ;;
+      /*)   cand=\"\$entry\" ;;
+      *)    cand=\"\$ROOT_HOME/\$entry\" ;;
+    esac
+    if [ -s \"\$cand\" ]; then
+      KEY_PATH=\"\$cand\"
+      break
+    fi
+  done
+
+  if [ -z \"\$KEY_PATH\" ]; then
+    for cand in \"\$ROOT_HOME/.ssh/authorized_keys\" \"\$ROOT_HOME/ssh/authorized_keys\" /etc/ssh/authorized_keys; do
+      if [ -s \"\$cand\" ]; then KEY_PATH=\"\$cand\"; break; fi
+    done
+  fi
+
+  if [ ! -s \"\$KEY_PATH\" ]; then
+    echo 'Error: No valid root authorized_keys file found on Slot A.' >&2
+    exit 1
+  fi
+
+  # 4. Copy authorized_keys to effective Slot B path and verify write
+  DEST_KEY=\"/mnt/slot_b\$KEY_PATH\"
+  mkdir -p \"\$(dirname \"\$DEST_KEY\")\"
+  cp -a \"\$KEY_PATH\" \"\$DEST_KEY\"
+  chmod 700 \"\$(dirname \"\$DEST_KEY\")\"
+  chmod 600 \"\$DEST_KEY\"
+
+  # Also populate secondary candidate locations on Slot B for recovery resilience
+  for dir in \"/mnt/slot_b\$ROOT_HOME/.ssh\" \"/mnt/slot_b\$ROOT_HOME/ssh\" /mnt/slot_b/etc/ssh; do
+    mkdir -p \"\$dir\"
+    cp -a \"\$KEY_PATH\" \"\$dir/authorized_keys\"
+    chmod 700 \"\$dir\"
+    chmod 600 \"\$dir/authorized_keys\"
+  done
+
+  # Verify destination copy succeeded and content matches before proceeding
+  if [ ! -s \"\$DEST_KEY\" ] || ! cmp -s \"\$KEY_PATH\" \"\$DEST_KEY\"; then
+    echo \"Error: Failed to verify authorized_keys write at \$DEST_KEY.\" >&2
+    exit 1
+  fi
+
+  if [ -f /mnt/slot_b/etc/ssh/sshd_config ]; then
+    sed -i -E 's/^#?[[:space:]]*PermitRootLogin[[:space:]]+.*/PermitRootLogin prohibit-password/' /mnt/slot_b/etc/ssh/sshd_config
+  fi
+
+  # 5. Sync updated binaries, configurations, and NATS service
   cp -a /opt/eight/bin/frankenfirmware /mnt/slot_b/opt/eight/bin/frankenfirmware
   cp -a /opt/eight/lib/subsystem_updates/* /mnt/slot_b/opt/eight/lib/subsystem_updates/
   cp -a /opt/eight/config/machine.json /mnt/slot_b/opt/eight/config/machine.json
@@ -331,7 +436,9 @@ ssh -p 8822 root@POD_IP "
   cp -a /etc/systemd/system/nats-server.service /mnt/slot_b/etc/systemd/system/nats-server.service
   ln -sf /etc/systemd/system/nats-server.service /mnt/slot_b/etc/systemd/system/multi-user.target.wants/nats-server.service
 
-  # Flush changes and unmount
-  sync && umount /mnt/slot_b
+  # 6. Flush changes and safely unmount
+  sync
+  trap - EXIT
+  umount /mnt/slot_b
 "
 ```
