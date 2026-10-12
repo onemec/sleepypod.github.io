@@ -113,9 +113,12 @@ From your computer within the `swu_extracted` directory, transfer the extracted 
 # Transfer the updated frankenfirmware daemon to staging in /tmp/
 scp -P 8822 opt/eight/bin/frankenfirmware root@POD_IP:/tmp/frankenfirmware
 
-# Transfer the microcontroller firmware images to subsystem updates
+# Transfer the microcontroller cover firmware image to subsystem updates
 scp -P 8822 opt/eight/lib/subsystem_updates/firmware-sensor-g0.bbin \
-  opt/eight/lib/subsystem_updates/firmware-frozen.bbin \
+  root@POD_IP:/opt/eight/lib/subsystem_updates/
+
+# Optional: transfer the hub thermal controller firmware (reflashes hub MCU on restart)
+scp -P 8822 opt/eight/lib/subsystem_updates/firmware-frozen.bbin \
   root@POD_IP:/opt/eight/lib/subsystem_updates/
 
 # Transfer the C NATS shared library to /usr/lib64/
@@ -268,7 +271,7 @@ ssh -p 8822 root@POD_IP "
   fi && \
 
   # Clean up installed NATS files and restore pre-existing NATS files if any existed
-  rm -f /usr/bin/nats-server /usr/bin/nats /usr/lib64/libnats.so* /etc/nats.conf /etc/systemd/system/nats-server.service && \
+  rm -f /usr/bin/nats-server /usr/bin/nats /usr/lib64/libnats.so.3.11.0 /usr/lib64/libnats.so.3.11 /etc/nats.conf /etc/systemd/system/nats-server.service && \
   if [ -d /opt/eight/backup_nats ]; then
     if [ -f /opt/eight/backup_nats/nats-server ]; then cp -a /opt/eight/backup_nats/nats-server /usr/bin/; fi
     if [ -f /opt/eight/backup_nats/nats ]; then cp -a /opt/eight/backup_nats/nats /usr/bin/; fi
@@ -429,7 +432,12 @@ ssh -p 8822 root@POD_IP "
   # 5. Sync updated binaries, configurations, and NATS service
   cp -a /opt/eight/bin/frankenfirmware /mnt/slot_b/opt/eight/bin/frankenfirmware
   cp -a /opt/eight/lib/subsystem_updates/* /mnt/slot_b/opt/eight/lib/subsystem_updates/
-  cp -a /opt/eight/config/machine.json /mnt/slot_b/opt/eight/config/machine.json
+  mkdir -p /mnt/slot_b/opt/eight/config
+  if [ -f /opt/eight/config/machine.json ]; then
+    cp -a /opt/eight/config/machine.json /mnt/slot_b/opt/eight/config/machine.json
+  else
+    rm -f /mnt/slot_b/opt/eight/config/machine.json
+  fi
   cp -a /usr/lib64/libnats.so* /mnt/slot_b/usr/lib64/
   cp -a /usr/bin/nats* /mnt/slot_b/usr/bin/
   cp -a /etc/nats.conf /mnt/slot_b/etc/nats.conf
