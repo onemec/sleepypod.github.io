@@ -69,7 +69,8 @@ ssh -p 8822 root@POD_IP "
   mkdir -p /opt/eight/backup_nats && \
   for f in /usr/bin/nats-server /usr/bin/nats /usr/lib64/libnats.so.3.11.0 /etc/nats.conf /etc/systemd/system/nats-server.service; do
     if [ -e \"\$f\" ] && [ ! -e \"/opt/eight/backup_nats/\$(basename \"\$f\")\" ]; then cp -a \"\$f\" /opt/eight/backup_nats/; fi
-  done
+  done && \
+  if [ ! -e /opt/eight/backup_nats/was-enabled ]; then systemctl is-enabled nats-server.service > /opt/eight/backup_nats/was-enabled 2>/dev/null || true; fi
 "
 ```
 
@@ -212,10 +213,11 @@ EOF
 
 ### Step 7: Deploy updated `frankenfirmware`
 
-Stop the background service, place the new binary, and restart:
+Stop the background service, place the new binary, and restart. `/tmp` is cleared on reboot, so if the Pod rebooted since Step 4, re-run the first `scp` in Step 4 before this step:
 
 ```bash
 ssh -p 8822 root@POD_IP "
+  if [ ! -f /tmp/frankenfirmware ]; then echo 'Error: /tmp/frankenfirmware missing; re-run the Step 4 scp' >&2; exit 1; fi && \
   systemctl stop frank.service && \
   cp /tmp/frankenfirmware /opt/eight/bin/frankenfirmware && \
   chmod +x /opt/eight/bin/frankenfirmware && \
@@ -306,6 +308,11 @@ ssh -p 8822 root@POD_IP "
   fi
   ldconfig
   systemctl daemon-reload
+
+  # Re-enable nats-server if it was enabled before Step 1
+  if [ \"\$(cat /opt/eight/backup_nats/was-enabled 2>/dev/null)\" = enabled ]; then
+    systemctl enable --now nats-server.service
+  fi
 
   # Restart frank to restore stock behavior
   systemctl start frank.service
@@ -436,22 +443,30 @@ ssh -p 8822 root@POD_IP "
   DEST_KEY=\"/mnt/slot_b\$KEY_PATH\"
   mkdir -p \"\$(dirname \"\$DEST_KEY\")\"
   cp -a \"\$KEY_PATH\" \"\$DEST_KEY\"
-  chmod 700 \"\$(dirname \"\$DEST_KEY\")\"
   chmod 600 \"\$DEST_KEY\"
-
-  # Also populate secondary candidate locations on Slot B for recovery resilience
-  for dir in \"/mnt/slot_b\$ROOT_HOME/.ssh\" \"/mnt/slot_b\$ROOT_HOME/ssh\" /mnt/slot_b/etc/ssh; do
-    mkdir -p \"\$dir\"
-    cp -a \"\$KEY_PATH\" \"\$dir/authorized_keys\"
-    chmod 700 \"\$dir\"
-    chmod 600 \"\$dir/authorized_keys\"
-  done
 
   # Verify destination copy succeeded and content matches before proceeding
   if [ ! -s \"\$DEST_KEY\" ] || ! cmp -s \"\$KEY_PATH\" \"\$DEST_KEY\"; then
     echo \"Error: Failed to verify authorized_keys write at \$DEST_KEY.\" >&2
     exit 1
   fi
+
+  # Also populate root's home key locations on Slot B for recovery resilience
+  for dir in \"/mnt/slot_b\$ROOT_HOME/.ssh\" \"/mnt/slot_b\$ROOT_HOME/ssh\"; do
+    mkdir -p \"\$dir\"
+    cp -a \"\$KEY_PATH\" \"\$dir/authorized_keys\"
+    chmod 700 \"\$dir\"
+    chmod 600 \"\$dir/authorized_keys\"
+  done
+
+  # Stock sshd_config_readonly reads /etc/ssh/authorized_keys as the login user (rewt),
+  # so append root's keys there instead of overwriting, and leave /etc/ssh at its stock mode.
+  mkdir -p /mnt/slot_b/etc/ssh
+  touch /mnt/slot_b/etc/ssh/authorized_keys
+  while IFS= read -r key || [ -n \"\$key\" ]; do
+    [ -n \"\$key\" ] || continue
+    grep -qxF -- \"\$key\" /mnt/slot_b/etc/ssh/authorized_keys || echo \"\$key\" >> /mnt/slot_b/etc/ssh/authorized_keys
+  done < \"\$KEY_PATH\"
 
   # Stock Slot B ships 'AllowUsers rewt', which refuses root even with a valid key.
   # Allow key-only root login and add root to AllowUsers in both sshd configs.
