@@ -34,28 +34,11 @@ The userspace ARM64 binaries (`frankenfirmware`, `libnats`, `nats-server`) run a
 
 ---
 
-## Option 1: Factory reset and official OTA (safest)
-
-If you are using matching hardware (such as a Pod 3 hub with a Pod 3 cover, or a Pod 4 hub with a Pod 4 cover) and want the safest path to the latest vendor firmware, use the official factory reset procedure.
-
-1. **Perform a hardware factory reset:**
-   Follow the firmware reset photos for your model in [free-sleep's installation guide](https://github.com/throwaway31265/free-sleep/blob/e5172139874a274d1ced12c8da052ab2cbaa286d/INSTALLATION.md). The hub boots from its factory backup partition and resets network settings.
-2. **Pair with the official Eight Sleep app:**
-   Temporarily pair the Pod to the official mobile app over Wi-Fi. Allow the hub to connect to Eight Sleep's servers and download official over-the-air (OTA) updates. Wait until all firmware and subsystem updates finish applying.
-3. **Re-gain root access and reinstall sleepypod:**
-   Once the official firmware is up to date, re-open the root shell using the hardware serial procedure described in [Open your Pod and get root](/core/root-access/), then install sleepypod following [Install and update Core](/core/installation/).
-
-<Callout type="info">
-  **Limitation:** Official OTA will not resolve cross-generation hardware pairings (for example,
-  official servers will not push STM32G0 Pod 4 cover firmware to a registered Pod 3 hub). For
-  mismatched hardware or offline setups, use Option 2 below.
-</Callout>
-
----
-
-## Option 2: Manual subsystem update (surgical extraction)
+## Method 1: Manual subsystem update (Recommended)
 
 This method extracts universal 64-bit ARM binaries and STM32 microcontroller firmware from an official `.swu` release and stages them directly on your rooted Pod.
+
+Because it works entirely on the local device without connecting the Pod to Eight Sleep cloud servers, this method keeps your existing root shell, masked update services, and SSH keys intact.
 
 ### Step 1: Back up the existing pod state
 
@@ -367,7 +350,10 @@ Finally, check `/persistent/sleepypod-data/biometrics.db` to confirm that `cap_s
 
 This procedure is strictly limited to boards running on the verified **Slot A** eMMC boot path (`/dev/mmcblk0p5`, `rootfs_a`) described in the [root access guide](/core/root-access/#6-boot-a-temporary-administrator-shell). Do not run this on SD-card installations (such as Pod 3 with an SD card), systems booted from Slot B, or unknown partition layouts.
 
-**Leaving Slot B untouched is recommended.** If Slot B retains its original factory installation, a hardware factory reset will safely boot into a pristine stock environment. If you overwrite Slot B, factory reset will boot into this modified environment instead.
+**Weighing Slot B synchronization:**
+
+- **Leaving Slot B untouched:** If Slot B retains its original factory installation, a hardware factory reset will boot into a pristine stock environment. However, if the hub ever boots Slot B and connects to the internet with stock update services active, official over-the-air updates may permanently patch root access.
+- **Synchronizing Slot B:** Copying your verified SSH keys, configurations, and masked services to Slot B prevents accidental firmware mismatches or root lockouts if the bootloader ever fails over to Slot B. However, overwriting Slot B means a factory reset boots into this modified environment rather than factory stock.
 
 Only synchronize Slot B if you are completely confident in your installation and want to prevent a lockout or firmware mismatch if the hardware ever fails over to Slot B.
 
@@ -499,6 +485,34 @@ ssh -p 8822 root@POD_IP "
   umount /mnt/slot_b
 "
 ```
+
+---
+
+## Alternative: Official OTA via factory reset (Caution: Root lockout risk)
+
+<Callout type="error">
+  **High risk of permanent root lockout.**
+
+Recent official Eight Sleep firmware releases reportedly patch known backdoor and root access vectors. If you perform a factory reset and pair the hub with the official Eight Sleep app over Wi-Fi, the hub downloads and applies the latest vendor updates from Eight Sleep's servers.
+
+Once updated to a patched stock build, you may be permanently blocked from regaining a root shell via serial/UART or reinstalling sleepypod.
+
+**Do not use this method if you plan to keep root access or run sleepypod.** Only follow these steps if you are returning the device permanently to stock operation and will only use the official Eight Sleep service.
+
+</Callout>
+
+For matched hardware returning to stock:
+
+1. **Perform a hardware factory reset:**
+   Follow the firmware reset photos for your model in [free-sleep's installation guide](https://github.com/throwaway31265/free-sleep/blob/e5172139874a274d1ced12c8da052ab2cbaa286d/INSTALLATION.md). The hub boots from its factory backup partition and resets network settings.
+2. **Pair with the official Eight Sleep app:**
+   Pair the Pod to the official mobile app over Wi-Fi. Allow the hub to connect to Eight Sleep's servers and download official over-the-air (OTA) updates until all firmware and subsystem updates finish applying.
+
+<Callout type="info">
+  **Hardware limitation:** Official OTA will not resolve cross-generation hardware pairings (for
+  example, official servers will not push STM32G0 Pod 4 cover firmware to a registered Pod 3 hub).
+  For cross-generation hardware, use Method 1 above.
+</Callout>
 
 ---
 
