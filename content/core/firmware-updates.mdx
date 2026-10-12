@@ -352,10 +352,10 @@ This procedure is strictly limited to boards running on the verified **Slot A** 
 
 **Weighing Slot B synchronization:**
 
-- **Leaving Slot B untouched:** If Slot B retains its original factory installation, a hardware factory reset will boot into a pristine stock environment. However, if the hub ever boots Slot B and connects to the internet with stock update services active, official over-the-air updates may permanently patch root access.
-- **Synchronizing Slot B:** Copying your verified SSH keys, configurations, and masked services to Slot B prevents accidental firmware mismatches or root lockouts if the bootloader ever fails over to Slot B. However, overwriting Slot B means a factory reset boots into this modified environment rather than factory stock.
+- **Leaving Slot B untouched:** If Slot B retains its original factory installation, a hardware factory reset can safely boot into a pristine stock environment. However, if the hub ever boots Slot B and connects to the internet with stock update services active, official over-the-air updates may permanently patch root access.
+- **Synchronizing Slot B:** Copying your verified SSH keys, configurations, and subsystem binaries to Slot B ensures SSH key access and hardware compatibility survive if the bootloader ever fails over to Slot B. However, overwriting Slot B replaces the pristine factory backup.
 
-Only synchronize Slot B if you are completely confident in your installation and want to prevent a lockout or firmware mismatch if the hardware ever fails over to Slot B.
+Only synchronize Slot B if you are completely confident in your installation and want to prevent a firmware mismatch or loss of SSH access if the hardware ever fails over to Slot B.
 
 </Callout>
 
@@ -501,10 +501,10 @@ Once updated to a patched stock build, you may be permanently blocked from regai
 
 </Callout>
 
-For matched hardware returning to stock:
+For matched hardware returning to stock (requires an untouched factory Slot B):
 
 1. **Perform a hardware factory reset:**
-   Follow the firmware reset photos for your model in [free-sleep's installation guide](https://github.com/throwaway31265/free-sleep/blob/e5172139874a274d1ced12c8da052ab2cbaa286d/INSTALLATION.md). The hub boots from its factory backup partition and resets network settings.
+   Follow the firmware reset photos for your model in [free-sleep's installation guide](https://github.com/throwaway31265/free-sleep/blob/e5172139874a274d1ced12c8da052ab2cbaa286d/INSTALLATION.md). If Slot B remains untouched, the hub boots from its factory backup partition and resets network settings. If you previously synchronized Slot B, a factory reset boots that modified environment instead of pristine factory stock.
 2. **Pair with the official Eight Sleep app:**
    Pair the Pod to the official mobile app over Wi-Fi. Allow the hub to connect to Eight Sleep's servers and download official over-the-air (OTA) updates until all firmware and subsystem updates finish applying.
 
