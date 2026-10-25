@@ -97,21 +97,22 @@ curl -is "https://update-api.8slp.net/v1/updates/pod3/1?deviceId=<id>&currentRev
 
 When selecting which files to extract and transfer, note which components are SoC-dependent versus hardware-universal:
 
-| Artifact                                                  | Sourcing guidance                                                 | Compatibility notes                                                                                                                                                                                                                                                                                                                                |
-| :-------------------------------------------------------- | :---------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `firmware-sensor-g0.bbin` & `firmware-sensor-g0-usb.bbin` | **Pod 3 bridge release or latest Pod 4/Pod 5 release**            | Runs entirely on the cover's STM32G0 microcontroller (`pn 20600-0001-I12`, hardware `0812`), independent of the hub's Linux SoC. Both `v5.5.9` and latest `v5.5.22.0` work seamlessly on a Pod 3 hub paired with a Pod 4 cover.                                                                                                                    |
-| `firmware-frozen.bbin`                                    | **Pod 3 bridge release or verified backwards-compatible release** | Runs on the hub's onboard thermal controller STM32. Version `v1.5.156` and newer `v1.6.114` (from modern SWUs) have both been tested and verified on Pod 3 MT8365 hubs (`pn 20500`, hardware revision `0x0504` / `F04`, `is_pod6=0`). Do not flash unverified thermal binaries that drop support for revision `0x0504`.                            |
-| `frankenfirmware`                                         | **Pod 3 bridge release or latest release with `F04` config**      | ARM64 ELF binary. Modern versions (compiled against glibc 2.33 on Yocto Hardknott) run cleanly on Pod 3's glibc 2.35 (Yocto Kirkstone). Dynamic shared libraries (`libnats.so.3.11`, `libsystemd`, `libudev`, `libstdc++`, `glibc`) resolve directly. It queries `machine.json` for `hwRev: F04` to dynamically map `/dev/ttyS1` and `/dev/ttyS2`. |
-| `Eight.Capybara`                                          | **Do not update / omit**                                          | Compiled .NET daemon. Modern builds attempt to initialize Pod 4/5 SMBus power controllers (`0x2C`) and fail on Pod 3 (`SMBus write block data operation failed. Error code: 6`). sleepypod Core replaces Capybara completely; leave stock Capybara untouched or disabled.                                                                          |
-| `nats-server`, `nats`, `libnats.so.3.11.0`, `nats.conf`   | **Any recent ARM64 release or standard package**                  | Generic 64-bit ARM Linux message bus binaries and configuration.                                                                                                                                                                                                                                                                                   |
+| Artifact                                                  | Sourcing guidance                                                  | Compatibility notes                                                                                                                                                                                                                                                                                                                                         |
+| :-------------------------------------------------------- | :----------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `firmware-sensor-g0.bbin` & `firmware-sensor-g0-usb.bbin` | **Pod 3 bridge release or latest Pod 4/Pod 5 release**             | Runs entirely on the cover's STM32G0 microcontroller (`pn 20600-0001-I12`, hardware `0812`), independent of the hub's Linux SoC. Both `v5.5.9` and latest `v5.5.22.0` work seamlessly on a Pod 3 hub paired with a Pod 4 cover.                                                                                                                             |
+| `firmware-frozen.bbin`                                    | **Pod 3 bridge release or verified backwards-compatible release**  | Runs on the hub's onboard thermal controller STM32. Version `v1.5.156` and newer `v1.6.114` (from modern SWUs) have both been tested and verified on Pod 3 MT8365 hubs (`pn 20500`, hardware revision `0x0504` / `F04`, `is_pod6=0`). Do not flash unverified thermal binaries that drop support for revision `0x0504`.                                     |
+| `frankenfirmware`                                         | **Pod 3 bridge release or latest release with `F03`/`F04` config** | ARM64 ELF binary. Modern versions (compiled against glibc 2.33 on Yocto Hardknott) run cleanly on Pod 3's glibc 2.35 (Yocto Kirkstone). Dynamic shared libraries (`libnats.so.3.11`, `libsystemd`, `libudev`, `libstdc++`, `glibc`) resolve directly. It queries `machine.json` for `hwRev: F03` or `F04` to dynamically map `/dev/ttyS1` and `/dev/ttyS2`. |
+| `Eight.Capybara`                                          | **Do not update / omit**                                           | Compiled .NET daemon. Modern builds attempt to initialize Pod 4/5 SMBus power controllers (`0x2C`) and fail on Pod 3 (`SMBus write block data operation failed. Error code: 6`). sleepypod Core replaces Capybara completely; leave stock Capybara untouched or disabled.                                                                                   |
+| `nats-server`, `nats`, `libnats.so.3.11.0`, `nats.conf`   | **Any recent ARM64 release or standard package**                   | Generic 64-bit ARM Linux message bus binaries and configuration.                                                                                                                                                                                                                                                                                            |
 
 <Callout type="info">
   **Why `frankenfirmware` works across releases, but `Eight.Capybara` does not:**
 
-**`frankenfirmware` runs cleanly:** When executed on a Pod 3 hub, `frankenfirmware` reads `/opt/eight/config/machine.json`, finds the `F04` section, and dynamically maps the MediaTek serial ports:
+**`frankenfirmware` runs cleanly:** When executed on a Pod 3 hub, `frankenfirmware` reads `/opt/eight/config/machine.json`, finds the matching section for the hub's hardware revision (`F03` or `F04`), and dynamically maps the MediaTek serial ports:
 
 ```text
 INF: DeviceInfo.cpp getPorts | Using machine config for hwRev F04 (device hwRev: F04)
+# (or 'hwRev F03' on F03 revisions)
 INF: main.cpp | sensor path: /dev/ttyS2 frozen path: /dev/ttyS1
 DBG: raw_nats_worker.h tryInitJs | successfully connected to jetstream!
 ```
@@ -280,7 +281,7 @@ ssh -p 8822 root@POD_IP "
 "
 ```
 
-### Step 6: Configure UART mapping and stage cover firmware (Pod 3 hub + Pod 4 cover)
+### Step 6: Configure UART mapping, metadata stubs, and stage cover firmware (Pod 3 hub + Pod 4 cover)
 
 <Callout type="info">
   **Hardware scope:** This step applies specifically when pairing a **Pod 3 hub with a Pod 4 cover**.
@@ -295,24 +296,47 @@ When connecting a Pod 4 cover to a Pod 3 MediaTek Pumpkin board, configure the h
 - `/dev/ttyS1` connects to the **hub thermal controller** (`pn 20500`, water/TEC/pump controller, 38,400 baud).
 
 <Callout type="warning">
-  **Capybara compatibility:** Legacy hub subsystem services such as `capybara.service` parse UART
-  device paths from the root level of `machine.json` and ignore the `"F04"` wrapper object. If
-  `sensorPort` and `frozenPort` are only defined inside the nested `"F04"` object, `capybara`
-  crashes and core dumps on startup. Because systemd treats `capybara` as part of the firmware
-  startup dependency chain, a crash here causes `A dependency job for frank.service failed`.
-  Including both the root keys and the `F04` block satisfies both `capybara` and `frankenfirmware`.
+  **Hub revision compatibility (`F03` vs. `F04`) and `capybara`:** Pod 3 hubs were manufactured in
+  both **`F03`** and **`F04`** hardware revisions (inspect your hub label with `cat
+  /deviceinfo/device-label`, e.g. `20500-0003-F03-...` or `20500-0003-F04-...`). `frankenfirmware`
+  inspects this label at boot and searches `machine.json` for a matching section. If an `F03` hub
+  only has `F04` defined, `frankenfirmware` falls back to default NXP i.MX 8M Mini UART ports
+  (`/dev/ttymxc0`), leaving the cover disconnected and causing `Thermostat.cpp` to reject
+  temperature commands (`[thermostat] %s heat-on rejected - no peripheral connected`). Additionally,
+  legacy `capybara.service` parses UART paths from the root level of `machine.json` and ignores
+  nested blocks. If root keys are missing, `capybara` dumps core on startup and triggers `A
+  dependency job for frank.service failed`. Defining both root keys and both `"F03"` and `"F04"`
+  blocks satisfies all Pod 3 hub revisions and background services. (Note: setting
+  `sensorSideOverrides` with `"force_f04"` or `"hwRev"` is unnecessary; `frankenfirmware` ignores
+  those keys).
 </Callout>
 
-Write the dual-level configuration and stage `firmware-sensor-g0.bbin` into the fallback locations so that uninitialized or blank cover bootloaders boot the STM32G0 image. `set -e` stops the script if any write fails:
+<Callout type="tip">
+  **Silencing `updateCaviaConfig` parse error spam:** Updated `frankenfirmware` polls
+  `/deviceinfo/capybara.run_info` every second. On Pod 3, stock Capybara does not write this file.
+  When missing, `frozen.cpp:927 updateCaviaConfig` throws `[json.exception.parse_error.101]` and
+  spams `journalctl -u frank` with 60 errors per minute. (Writing to `cavia.json` has no effect
+  because `frankenfirmware` reads `/deviceinfo/capybara.run_info`). Deploying an empty JSON object `
+  {}` to `/deviceinfo/capybara.run_info` and persisting it across reboots with a `frank.service`
+  systemd drop-in completely silences this log spam.
+</Callout>
+
+Write the multi-revision configuration, metadata stub, and stage `firmware-sensor-g0.bbin` into the fallback locations:
 
 ```bash
 ssh -p 8822 root@POD_IP "
   set -e
   mkdir -p /opt/eight/config
+
+  # 1. Write machine.json covering root keys, F03, and F04 revisions
   cat > /opt/eight/config/machine.json << 'EOF'
 {
   \"sensorPort\": \"/dev/ttyS2\",
   \"frozenPort\": \"/dev/ttyS1\",
+  \"F03\": {
+    \"sensorPort\": \"/dev/ttyS2\",
+    \"frozenPort\": \"/dev/ttyS1\"
+  },
   \"F04\": {
     \"sensorPort\": \"/dev/ttyS2\",
     \"frozenPort\": \"/dev/ttyS1\"
@@ -320,7 +344,16 @@ ssh -p 8822 root@POD_IP "
 }
 EOF
 
-  # Copy the G0 firmware into the fallback locations for the Pod 4 cover
+  # 2. Prevent updateCaviaConfig parse error spam across reboots
+  mkdir -p /etc/systemd/system/frank.service.d
+  cat > /etc/systemd/system/frank.service.d/capybara-runinfo.conf << 'EOF'
+[Service]
+ExecStartPre=/bin/sh -c '[ -s /deviceinfo/capybara.run_info ] || echo \"{}\" > /deviceinfo/capybara.run_info'
+EOF
+  echo '{}' > /deviceinfo/capybara.run_info
+  systemctl daemon-reload
+
+  # 3. Copy the G0 firmware into the fallback locations for the Pod 4 cover
   cp /opt/eight/lib/subsystem_updates/firmware-sensor-g0.bbin /opt/eight/lib/subsystem_updates/firmware-sensor-legacy.bbin
   cp /opt/eight/lib/subsystem_updates/firmware-sensor-g0.bbin /opt/eight/lib/subsystem_updates/firmware-sensor.bbin
 "
@@ -438,8 +471,9 @@ ssh -p 8822 root@POD_IP "
     rm -f /opt/eight/config/machine.json
   fi
 
-  # Clean up installed NATS files and restore pre-existing NATS files if any existed
-  rm -f /usr/bin/nats-server /usr/bin/nats /usr/lib64/libnats.so.3.11.0 /usr/lib64/libnats.so.3.11 /etc/nats.conf /etc/systemd/system/nats-server.service
+  # Clean up installed NATS files, systemd drop-ins, and restore pre-existing NATS files if any existed
+  rm -f /usr/bin/nats-server /usr/bin/nats /usr/lib64/libnats.so.3.11.0 /usr/lib64/libnats.so.3.11 /etc/nats.conf /etc/systemd/system/nats-server.service /deviceinfo/capybara.run_info
+  rm -rf /etc/systemd/system/frank.service.d
   if [ -d /opt/eight/backup_nats ]; then
     if [ -f /opt/eight/backup_nats/nats-server ]; then
       cp -a /opt/eight/backup_nats/nats-server /usr/bin/
@@ -529,7 +563,11 @@ python3 -c "import sqlite3; c=sqlite3.connect('/persistent/sleepypod-data/biomet
 ### Troubleshooting subsystem errors
 
 - **`A dependency job for frank.service failed`:**
-  Check `systemctl status capybara.service` and `journalctl -u capybara -n 50 --no-pager`. If `capybara` dumped core or exited with an error, inspect `/opt/eight/config/machine.json`. Confirm that `sensorPort` and `frozenPort` are declared at both the root level and inside the nested `F04` block as shown in [Step 6](#step-6-configure-uart-mapping-and-stage-cover-firmware-pod-3-hub--pod-4-cover).
+  Check `systemctl status capybara.service` and `journalctl -u capybara -n 50 --no-pager`. If `capybara` dumped core or exited with an error, inspect `/opt/eight/config/machine.json`. Confirm that `sensorPort` and `frozenPort` are declared at both the root level and inside the nested `F03` and `F04` blocks as shown in [Step 6](#step-6-configure-uart-mapping-metadata-stubs-and-stage-cover-firmware-pod-3-hub--pod-4-cover).
+- **`[thermostat] left heat-on rejected - no peripheral connected` (or cover not detected):**
+  Check your device label with `cat /deviceinfo/device-label`. If the hardware revision is `F03` (e.g., `20500-0003-F03-...`) and `/opt/eight/config/machine.json` only contains `"F04"`, `frankenfirmware` falls back to default NXP i.MX 8M Mini ports (`/dev/ttymxc0`) and never connects to the cover on `/dev/ttyS2`. Add the `"F03"` block to `machine.json` with `"sensorPort": "/dev/ttyS2"` and `"frozenPort": "/dev/ttyS1"`. (Note: setting `sensorSideOverrides` with `"force_f04"` has no effect as the daemon ignores unknown override keys).
+- **Log flooding with `frozen.cpp:927 updateCaviaConfig|[frozen] get_cavia_info() failed: [json.exception.parse_error.101]`:**
+  Confirm that `/deviceinfo/capybara.run_info` exists and contains `{}`. Because `/deviceinfo` is an in-memory `tmpfs`, ensure the systemd drop-in `/etc/systemd/system/frank.service.d/capybara-runinfo.conf` is in place to recreate the stub on boot. (Note: creating `cavia.json` has no effect because `frankenfirmware` explicitly polls `/deviceinfo/capybara.run_info`).
 - **Serial handshake stalls or frozen controller does not initialize:**
   If `journalctl -u frank -f` does not show `Firmware initialized` within 60–90 seconds after restarting `frank.service`, or if `/dev/ttyS1` stops responding, perform a clean hardware reboot (`reboot`). Software service restarts alone cannot toggle the physical STM32 NRST lines when a microcontroller is stuck in an unhandled UART state.
 - **Biometrics streaming, but cooling or heating commands fail:**
