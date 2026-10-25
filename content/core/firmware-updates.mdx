@@ -148,15 +148,15 @@ tar -xzf ROOTFS_ARCHIVE.tar.gz
 
 Locate the required artifacts in the extracted root filesystem:
 
-| Path in archive                                               | Artifact description                                                      | Target path on Pod                        |
-| :------------------------------------------------------------ | :------------------------------------------------------------------------ | :---------------------------------------- |
-| `opt/eight/bin/frankenfirmware`                               | ARM64 daemon with NATS JetStream and STM32G0 support                      | `/opt/eight/bin/frankenfirmware`          |
-| `opt/eight/lib/subsystem_updates/firmware-sensor-g0.bbin`     | STM32G0 Pod 4 cover firmware (`v5.5.9` or `v5.5.22`, ~136 KB)             | `/opt/eight/lib/subsystem_updates/`       |
-| `opt/eight/lib/subsystem_updates/firmware-sensor-g0-usb.bbin` | Optional: USB cover sensor variant (~136 KB)                              | `/opt/eight/lib/subsystem_updates/`       |
-| `opt/eight/lib/subsystem_updates/firmware-frozen.bbin`        | Hub thermal controller firmware (`v1.5.156` or `v1.6.114`, ~120 KB)       | `/opt/eight/lib/subsystem_updates/`       |
-| `lib/libnats.so.3.11.0`                                       | C NATS shared library (located in `lib/` or `usr/lib/`, not `usr/lib64/`) | `/usr/lib64/libnats.so.3.11.0`            |
-| `usr/bin/nats-server` & `usr/bin/nats`                        | Static ARM64 NATS server and management CLI                               | `/usr/bin/`                               |
-| `etc/nats.conf` & `lib/systemd/system/nats-server.service`    | NATS service configuration and systemd unit                               | `/etc/nats.conf` & `/etc/systemd/system/` |
+| Path in archive                                               | Artifact description                                                        | Target path on Pod                        |
+| :------------------------------------------------------------ | :-------------------------------------------------------------------------- | :---------------------------------------- |
+| `opt/eight/bin/frankenfirmware`                               | ARM64 daemon with NATS JetStream and STM32G0 support                        | `/opt/eight/bin/frankenfirmware`          |
+| `opt/eight/lib/subsystem_updates/firmware-sensor-g0.bbin`     | STM32G0 Pod 4 cover firmware (`v5.5.9` or `v5.5.22.0`, ~137 KB)             | `/opt/eight/lib/subsystem_updates/`       |
+| `opt/eight/lib/subsystem_updates/firmware-sensor-g0-usb.bbin` | Optional: USB cover sensor variant (~145 KB)                                | `/opt/eight/lib/subsystem_updates/`       |
+| `opt/eight/lib/subsystem_updates/firmware-frozen.bbin`        | Hub thermal controller firmware (`v1.5.156` ~120 KB, or `v1.6.114` ~138 KB) | `/opt/eight/lib/subsystem_updates/`       |
+| `lib/libnats.so.3.11.0`                                       | C NATS shared library (located in `lib/` or `usr/lib/`, not `usr/lib64/`)   | `/usr/lib64/libnats.so.3.11.0`            |
+| `usr/bin/nats-server` & `usr/bin/nats`                        | Static ARM64 NATS server and management CLI                                 | `/usr/bin/`                               |
+| `etc/nats.conf` & `lib/systemd/system/nats-server.service`    | NATS service configuration and systemd unit                                 | `/etc/nats.conf` & `/etc/systemd/system/` |
 
 #### Locating `libnats.so.3.11.0`
 
@@ -192,12 +192,15 @@ objdump -p opt/eight/bin/frankenfirmware 2>/dev/null | grep NEEDED | grep libnat
 # Expected: NEEDED libnats.so.3.11
 
 # 4. Check cover firmware version (STM32G0)
-strings opt/eight/lib/subsystem_updates/firmware-sensor-g0.bbin | grep -E "v[0-9]+\.[0-9]+"
-# Expected: v5.5.9 or v5.5.22.0
+# Subsystem .bbin files store version components in TLV headers at offset 29 (length at offset 28)
+python3 -c "b=open('opt/eight/lib/subsystem_updates/firmware-sensor-g0.bbin','rb').read(34); print('v' + '.'.join(str(x) for x in b[29:29+b[28]]))"
+# Expected: v5.5.9.0 or v5.5.22.0
+# Alternatively using od: od -An -j 29 -N 4 -t u1 opt/eight/lib/subsystem_updates/firmware-sensor-g0.bbin
 
 # 5. Check hub thermal controller firmware version (Pod 3 hub MCU)
-strings opt/eight/lib/subsystem_updates/firmware-frozen.bbin | grep -E "v[0-9]+\.[0-9]+"
+python3 -c "b=open('opt/eight/lib/subsystem_updates/firmware-frozen.bbin','rb').read(34); print('v' + '.'.join(str(x) for x in b[29:29+b[28]]))"
 # Expected: v1.5.156 or v1.6.114
+# Alternatively using od: od -An -j 29 -N 3 -t u1 opt/eight/lib/subsystem_updates/firmware-frozen.bbin
 ```
 
 ### Step 4: Transfer artifacts to the Pod
@@ -474,10 +477,10 @@ ssh -p 8822 root@POD_IP "
 
 ## Verification
 
-Check the system status on the Pod:
+Check the system status on the Pod (`/usr/local/bin/sp-status`, or `sp-status` in an interactive shell):
 
 ```bash
-sp-status
+/usr/local/bin/sp-status
 ```
 
 Confirm that the sensor pipeline reports `NATS JetStream`:
@@ -517,7 +520,11 @@ curl -s http://localhost:3000/api/system/sensor-source
 # Expect: {"stream":{"source":"nats","lastFrameAgeMs":21,"lastFrameType":"capSense"}}
 ```
 
-Finally, check `/persistent/sleepypod-data/biometrics.db` to confirm that `cap_sense_frames` and `bed_temp` rows are incrementing in real time.
+Finally, check `/persistent/sleepypod-data/biometrics.db` to confirm that `cap_sense_frames` and `bed_temp` rows are incrementing in real time:
+
+```bash
+python3 -c "import sqlite3; c=sqlite3.connect('/persistent/sleepypod-data/biometrics.db').cursor(); print('Capsense frames:', c.execute('SELECT count(*) FROM cap_sense_frames').fetchone()[0]); print('Bed temp samples:', c.execute('SELECT count(*) FROM bed_temp').fetchone()[0])"
+```
 
 ### Troubleshooting subsystem errors
 
