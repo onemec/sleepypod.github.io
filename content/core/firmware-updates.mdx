@@ -441,8 +441,16 @@ If you encounter issues or wish to revert to stock daemons:
 ssh -p 8822 root@POD_IP "
   set -e
 
+  # Resolve frankenfirmware backup
+  BACKUP_BIN=""
+  if [ -f /opt/eight/bin/frankenfirmware.bak ]; then
+    BACKUP_BIN="/opt/eight/bin/frankenfirmware.bak"
+  else
+    BACKUP_BIN="\$(ls -1t /opt/eight/bin/frankenfirmware.bak* 2>/dev/null | head -n1 || true)"
+  fi
+
   # Verify required backups exist before changing services
-  if [ ! -f /opt/eight/bin/frankenfirmware.bak ] || [ ! -d /opt/eight/lib/subsystem_updates.bak ]; then
+  if [ -z "\$BACKUP_BIN" ] || [ ! -f "\$BACKUP_BIN" ] || [ ! -d /opt/eight/lib/subsystem_updates.bak ]; then
     echo 'Error: backups missing; aborting rollback' >&2
     exit 1
   fi
@@ -456,7 +464,7 @@ ssh -p 8822 root@POD_IP "
   fi
 
   # Restore frankenfirmware
-  cp -a /opt/eight/bin/frankenfirmware.bak /opt/eight/bin/frankenfirmware
+  cp -a "\$BACKUP_BIN" /opt/eight/bin/frankenfirmware
 
   # Safely stage and restore subsystem_updates
   rm -rf /opt/eight/lib/subsystem_updates.restoring
@@ -718,6 +726,9 @@ ssh -p 8822 root@POD_IP "
   cp -a /etc/nats.conf /mnt/slot_b/etc/nats.conf
   cp -a /etc/systemd/system/nats-server.service /mnt/slot_b/etc/systemd/system/nats-server.service
   ln -sf /etc/systemd/system/nats-server.service /mnt/slot_b/etc/systemd/system/multi-user.target.wants/nats-server.service
+  if [ -d /etc/systemd/system/frank.service.d ]; then
+    cp -a /etc/systemd/system/frank.service.d /mnt/slot_b/etc/systemd/system/
+  fi
 
   # 6. Flush changes and safely unmount
   sync
