@@ -21,7 +21,8 @@ While sleepypod Core updates itself with `sp-update`, the underlying stock firmw
 - **Hub thermal controller features:** Updating `firmware-frozen.bbin` to version `v1.5.156` or `v1.6.114` adds `raw.frz.health` and `raw.frz.therm` telemetry for pump flow rates, fan RPMs, and TEC thermal power. Version `v1.6.114` adds support for newer hardware while maintaining backward compatibility with Pod 3 hardware revision `0x0504` (`F04`, `is_pod6=0`).
 
 <Callout type="warning">
-  **Never flash a full `.swu` image to a MediaTek-based hub.**
+
+**Never flash a full `.swu` image to a MediaTek-based hub.**
 
 Stock Eight Sleep `.swu` packages (such as `3dd72bdefafbcfc202d6715fc45f9c7bbb3e02ff.swu`) are **full operating system image updates** containing a complete root filesystem archive (`eightsleep-nxp-image-imx8mm-var-dart-eight.tar.gz`). This image is compiled exclusively for the **NXP i.MX 8M Mini** platform (Variscite DART-MX8M-MINI SoM) used on Pod 4 and Pod 5 hubs.
 
@@ -87,10 +88,9 @@ curl -is "https://update-api.8slp.net/v1/updates/pod3/1?deviceId=<id>&currentRev
 - Newer releases (such as `3dd72bdefafbcfc202d6715fc45f9c7bbb3e02ff.swu`) provide updated microcontroller firmware, including STM32G0 cover firmware `v5.5.22.0` and hub thermal firmware `v1.6.114`.
 
 <Callout type="info">
-  **Release vs. delta archives:** Always use a full release archive containing `/releases/` in its
-  URL path. Full releases contain the complete root filesystem tarball
-  (`eightsleep-nxp-image-*.tar.gz`). Incremental or delta update packages do not include the rootfs
-  and will be missing `libnats` and system binaries.
+
+**Release vs. delta archives:** Always use a full release archive containing `/releases/` in its URL path. Full releases contain the complete root filesystem tarball (`eightsleep-nxp-image-*.tar.gz`). Incremental or delta update packages do not include the rootfs and will be missing `libnats` and system binaries.
+
 </Callout>
 
 #### Choosing artifacts: Pod 3 releases vs. latest firmware
@@ -106,7 +106,8 @@ When selecting which files to extract and transfer, note which components are So
 | `nats-server`, `nats`, `libnats.so.3.11.0`, `nats.conf`   | **Any recent ARM64 release or standard package**                   | Generic 64-bit ARM Linux message bus binaries and configuration.                                                                                                                                                                                                                                                                                            |
 
 <Callout type="info">
-  **Why `frankenfirmware` works across releases, but `Eight.Capybara` does not:**
+
+**Why `frankenfirmware` works across releases, but `Eight.Capybara` does not:**
 
 **`frankenfirmware` runs cleanly:** When executed on a Pod 3 hub, `frankenfirmware` reads `/opt/eight/config/machine.json`, finds the matching section for the hub's hardware revision (`F03` or `F04`), and dynamically maps the MediaTek serial ports:
 
@@ -208,9 +209,10 @@ python3 -c "b=open('opt/eight/lib/subsystem_updates/firmware-frozen.bbin','rb').
 
 From your computer within the extracted root filesystem directory (`swu_extracted`), transfer the files to the Pod over port 8822.
 
-<Callout type="tip">
-  **Legacy SCP protocol:** Use `scp -O` (the legacy protocol flag). Newer OpenSSH clients default to
-  SFTP, which can be rejected by the Pod's embedded dropbear/sshd server.
+<Callout type="default">
+
+**Legacy SCP protocol:** Use `scp -O` (the legacy protocol flag). Newer OpenSSH clients default to SFTP, which can be rejected by the Pod's embedded dropbear/sshd server.
+
 </Callout>
 
 If you are re-running this step and `nats-server` is already running, stop it first (`ssh -p 8822 root@POD_IP "systemctl stop nats-server.service"`). Otherwise `scp` cannot overwrite the running binary and fails with `Text file busy`.
@@ -247,11 +249,9 @@ ssh -p 8822 root@POD_IP "
 ```
 
 <Callout type="info">
-  **Hub controller firmware:** Staging `firmware-frozen.bbin` in `/opt/eight/lib/subsystem_updates/`
-  causes `frank` to reflash the hub's onboard thermal controller MCU upon restarting. Both
-  `v1.5.156` and `v1.6.114` have been tested and verified on a Pod 3 hub (`pn 20500`, hardware
-  revision `0504`). If you only want to update cover support or NATS telemetry without reflashing
-  the hub controller, omit copying `firmware-frozen.bbin`.
+
+**Hub controller firmware:** Staging `firmware-frozen.bbin` in `/opt/eight/lib/subsystem_updates/` causes `frank` to reflash the hub's onboard thermal controller MCU upon restarting. Both `v1.5.156` and `v1.6.114` have been tested and verified on a Pod 3 hub (`pn 20500`, hardware revision `0504`). If you only want to update cover support or NATS telemetry without reflashing the hub controller, omit copying `firmware-frozen.bbin`.
+
 </Callout>
 
 ### Step 5: Install and start NATS JetStream
@@ -284,7 +284,8 @@ ssh -p 8822 root@POD_IP "
 ### Step 6: Configure UART mapping, metadata stubs, and stage cover firmware (Pod 3 hub + Pod 4 cover)
 
 <Callout type="info">
-  **Hardware scope:** This step applies specifically when pairing a **Pod 3 hub with a Pod 4 cover**.
+
+**Hardware scope:** This step applies specifically when pairing a **Pod 3 hub with a Pod 4 cover**.
 
 If you are updating a Pod 3 hub paired with its original Pod 3 cover (STM32F0/F1), do **not** overwrite `firmware-sensor.bbin` with the G0 binary or change `machine.json`—retain the stock port mapping and cover firmware so the original microcontroller can initialize normally.
 
@@ -296,29 +297,15 @@ When connecting a Pod 4 cover to a Pod 3 MediaTek Pumpkin board, configure the h
 - `/dev/ttyS1` connects to the **hub thermal controller** (`pn 20500`, water/TEC/pump controller, 38,400 baud).
 
 <Callout type="warning">
-  **Hub revision compatibility (`F03` vs. `F04`) and `capybara`:** Pod 3 hubs were manufactured in
-  both **`F03`** and **`F04`** hardware revisions (inspect your hub label with `cat
-  /deviceinfo/device-label`, e.g. `20500-0003-F03-...` or `20500-0003-F04-...`). `frankenfirmware`
-  inspects this label at boot and searches `machine.json` for a matching section. If an `F03` hub
-  only has `F04` defined, `frankenfirmware` falls back to default NXP i.MX 8M Mini UART ports
-  (`/dev/ttymxc0`), leaving the cover disconnected and causing `Thermostat.cpp` to reject
-  temperature commands (`[thermostat] %s heat-on rejected - no peripheral connected`). Additionally,
-  legacy `capybara.service` parses UART paths from the root level of `machine.json` and ignores
-  nested blocks. If root keys are missing, `capybara` dumps core on startup and triggers `A
-  dependency job for frank.service failed`. Defining both root keys and both `"F03"` and `"F04"`
-  blocks satisfies all Pod 3 hub revisions and background services. (Note: setting
-  `sensorSideOverrides` with `"force_f04"` or `"hwRev"` is unnecessary; `frankenfirmware` ignores
-  those keys).
+
+**Hub revision compatibility (`F03` vs. `F04`) and `capybara`:** Pod 3 hubs were manufactured in both **`F03`** and **`F04`** hardware revisions (inspect your hub label with `cat /deviceinfo/device-label`, e.g. `20500-0003-F03-...` or `20500-0003-F04-...`). `frankenfirmware` inspects this label at boot and searches `machine.json` for a matching section. If an `F03` hub only has `F04` defined, `frankenfirmware` falls back to default NXP i.MX 8M Mini UART ports (`/dev/ttymxc0`), leaving the cover disconnected and causing `Thermostat.cpp` to reject temperature commands (`[thermostat] %s heat-on rejected - no peripheral connected`). Additionally, legacy `capybara.service` parses UART paths from the root level of `machine.json` and ignores nested blocks. If root keys are missing, `capybara` dumps core on startup and triggers `A dependency job for frank.service failed`. Defining both root keys and both `"F03"` and `"F04"` blocks satisfies all Pod 3 hub revisions and background services. (Note: setting `sensorSideOverrides` with `"force_f04"` or `"hwRev"` is unnecessary; `frankenfirmware` ignores those keys).
+
 </Callout>
 
-<Callout type="tip">
-  **Silencing `updateCaviaConfig` parse error spam:** Updated `frankenfirmware` polls
-  `/deviceinfo/capybara.run_info` every second. On Pod 3, stock Capybara does not write this file.
-  When missing, `frozen.cpp:927 updateCaviaConfig` throws `[json.exception.parse_error.101]` and
-  spams `journalctl -u frank` with 60 errors per minute. (Writing to `cavia.json` has no effect
-  because `frankenfirmware` reads `/deviceinfo/capybara.run_info`). Deploying an empty JSON object `
-  {}` to `/deviceinfo/capybara.run_info` and persisting it across reboots with a `frank.service`
-  systemd drop-in completely silences this log spam.
+<Callout type="default">
+
+**Silencing `updateCaviaConfig` parse error spam:** Updated `frankenfirmware` polls `/deviceinfo/capybara.run_info` every second. On Pod 3, stock Capybara does not write this file. When missing, `frozen.cpp:927 updateCaviaConfig` throws `[json.exception.parse_error.101]` and spams `journalctl -u frank` with 60 errors per minute. (Writing to `cavia.json` has no effect because `frankenfirmware` reads `/deviceinfo/capybara.run_info`). Deploying an empty JSON object `{}` to `/deviceinfo/capybara.run_info` and persisting it across reboots with a `frank.service` systemd drop-in completely silences this log spam.
+
 </Callout>
 
 Write the multi-revision configuration, metadata stub, and stage `firmware-sensor-g0.bbin` into the fallback locations:
@@ -376,8 +363,9 @@ ssh -p 8822 root@POD_IP "
 "
 ```
 
-<Callout type="tip">
-  **Clean hardware reboot for UART synchronization:** While `systemctl restart frank.service` triggers the update, microcontrollers that were in intermediate UART states or operating at different baud rates may fail to complete the initial handshake over `/dev/ttyS1`. If `frank` stalls or does not report `Firmware initialized` within 60–90 seconds, initiate a clean reboot:
+<Callout type="default">
+
+**Clean hardware reboot for UART synchronization:** While `systemctl restart frank.service` triggers the update, microcontrollers that were in intermediate UART states or operating at different baud rates may fail to complete the initial handshake over `/dev/ttyS1`. If `frank` stalls or does not report `Firmware initialized` within 60–90 seconds, initiate a clean reboot:
 
 ```bash
 ssh -p 8822 root@POD_IP "reboot"
@@ -594,7 +582,8 @@ python3 -c "import sqlite3; c=sqlite3.connect('/persistent/sleepypod-data/biomet
 ## Optional: Synchronizing the backup partition (Slot B)
 
 <Callout type="error">
-  **Advanced and high risk.**
+
+**Advanced and high risk.**
 
 This procedure is strictly limited to boards running on the verified **Slot A** eMMC boot path (`/dev/mmcblk0p5`, `rootfs_a`) described in the [root access guide](/core/root-access/#6-boot-a-temporary-administrator-shell). Do not run this on SD-card installations (such as Pod 3 with an SD card), systems booted from Slot B, or unknown partition layouts.
 
@@ -742,7 +731,8 @@ ssh -p 8822 root@POD_IP "
 ## Alternative: Official OTA via factory reset
 
 <Callout type="error">
-  **Root access after OTA is not guaranteed.**
+
+**Root access after OTA is not guaranteed.**
 
 Factory reset and pairing with the official app can install newer vendor firmware. The pinned root-access instructions describe particular hardware and firmware; they do not establish that the same serial/UART procedure works after every future update.
 
@@ -760,9 +750,9 @@ For matched hardware returning to stock, first confirm that Slot B is untouched.
    Pair the Pod to the official mobile app over Wi-Fi. Allow the hub to connect to Eight Sleep's servers and download official over-the-air (OTA) updates until all firmware and subsystem updates finish applying.
 
 <Callout type="info">
-  **Hardware limitation:** Official OTA will not resolve cross-generation hardware pairings (for
-  example, official servers will not push STM32G0 Pod 4 cover firmware to a registered Pod 3 hub).
-  For cross-generation hardware, use Method 1 above.
+
+**Hardware limitation:** Official OTA will not resolve cross-generation hardware pairings (for example, official servers will not push STM32G0 Pod 4 cover firmware to a registered Pod 3 hub). For cross-generation hardware, use Method 1 above.
+
 </Callout>
 
 ---
