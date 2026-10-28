@@ -130,9 +130,9 @@ ssh -p 8822 root@POD_IP "
   done
 
   # 5. Sync updated binaries, configurations, and NATS service
+  mkdir -p /mnt/slot_b/opt/eight/bin /mnt/slot_b/opt/eight/lib/subsystem_updates /mnt/slot_b/opt/eight/config /mnt/slot_b/usr/lib64 /mnt/slot_b/usr/bin /mnt/slot_b/etc/systemd/system/multi-user.target.wants
   cp -a /opt/eight/bin/frankenfirmware /mnt/slot_b/opt/eight/bin/frankenfirmware
   cp -a /opt/eight/lib/subsystem_updates/* /mnt/slot_b/opt/eight/lib/subsystem_updates/
-  mkdir -p /mnt/slot_b/opt/eight/config /mnt/slot_b/etc/systemd/system/multi-user.target.wants
   if [ -f /opt/eight/config/machine.json ]; then
     cp -a /opt/eight/config/machine.json /mnt/slot_b/opt/eight/config/machine.json
   else

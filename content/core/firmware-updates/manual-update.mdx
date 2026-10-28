@@ -34,7 +34,7 @@ ssh -p 8822 root@POD_IP "
 "
 ```
 
-Keep these backups available on the Pod. If you need to revert any changes, see [Roll back to stock](/core/firmware-updates/rollback/).
+Keep these backups available on the Pod. If you need to revert any changes, see [Roll back subsystem files](/core/firmware-updates/rollback/).
 
 ## Step 2: Acquire the update archive
 
@@ -110,7 +110,7 @@ find . \( -name 'sw-description' -o -name '*image*.tar*' \
 
 ### Pre-flight artifact validation
 
-Before copying files to the Pod, validate that the extracted binaries and firmware payloads match expected architectures and versions:
+Before copying files to the Pod, validate that the extracted binaries and firmware payloads match expected architectures and versions. In both the `file` check below and the Step 4 `scp` command, replace `lib/libnats.so.3.11.0` with the path reported by `find` (for example, `usr/lib/libnats.so.3.11.0`).
 
 ```bash
 # 1. Verify ARM64 ELF architecture across userland binaries and libraries
@@ -163,7 +163,7 @@ scp -O -P 8822 \
 scp -O -P 8822 opt/eight/lib/subsystem_updates/firmware-frozen.bbin \
   root@POD_IP:/opt/eight/lib/subsystem_updates/
 
-# Transfer the C NATS shared library from archive lib/ to /usr/lib64/ on the Pod
+# Use the libnats source path reported by find in Step 3 (lib/ or usr/lib/)
 scp -O -P 8822 lib/libnats.so.3.11.0 root@POD_IP:/usr/lib64/
 
 # Transfer the NATS server and management CLI to /usr/bin/

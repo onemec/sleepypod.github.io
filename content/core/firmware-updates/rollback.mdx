@@ -15,13 +15,9 @@ If you encounter issues or wish to revert to stock daemons:
 ssh -p 8822 root@POD_IP 'sh -s' <<'REMOTE'
   set -e
 
-  # Resolve frankenfirmware backup
-  BACKUP_BIN=""
-  if [ -f /opt/eight/bin/frankenfirmware.bak ]; then
-    BACKUP_BIN="/opt/eight/bin/frankenfirmware.bak"
-  else
-    BACKUP_BIN="$(ls -1t /opt/eight/bin/frankenfirmware.bak* 2>/dev/null | head -n1 || true)"
-  fi
+  # Use the fixed backup paired with subsystem_updates.bak.
+  # Timestamped backups may already contain updated firmware.
+  BACKUP_BIN="/opt/eight/bin/frankenfirmware.bak"
 
   # Verify required backups exist before changing services
   if [ -z "$BACKUP_BIN" ] || [ ! -f "$BACKUP_BIN" ] || [ ! -d /opt/eight/lib/subsystem_updates.bak ]; then
